@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#0f172a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="CampusAssets">
+<title>Campus Assets</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+
+<!-- SETUP SCREEN -->
+<div id="screen-setup" class="screen active">
+  <div class="setup-wrap">
+    <div class="setup-logo">
+      <div class="logo-mark">CA</div>
+      <h1>Campus Assets</h1>
+      <p>Connect your Notion workspace to get started</p>
+    </div>
+    <div class="setup-card">
+      <div class="field-group">
+        <label>Notion integration token</label>
+        <input type="password" id="setup-token" placeholder="secret_xxxxxxxxxxxxxxxx">
+        <span class="field-hint">Settings → Integrations → New integration</span>
+      </div>
+      <div class="field-group">
+        <label>Asset registry database ID</label>
+        <input type="text" id="setup-assets-db" placeholder="32-character database ID">
+      </div>
+      <div class="field-group">
+        <label>Inspections database ID</label>
+        <input type="text" id="setup-inspections-db" placeholder="32-character database ID">
+      </div>
+      <div class="field-group">
+        <label>Work orders database ID</label>
+        <input type="text" id="setup-wo-db" placeholder="32-character database ID">
+      </div>
+      <div class="field-group">
+        <label>Inventory database ID</label>
+        <input type="text" id="setup-inv-db" placeholder="32-character database ID">
+      </div>
+      <div class="field-group">
+        <label>Stock movements database ID</label>
+        <input type="text" id="setup-mov-db" placeholder="32-character database ID">
+      </div>
+      <button class="btn-primary" onclick="App.saveSetup()">Connect to Notion</button>
+      <a class="setup-help" href="#" onclick="App.showHelp()">How to find these IDs ↗</a>
+    </div>
+    <div id="setup-error" class="setup-error hidden"></div>
+  </div>
+</div>
+
+<!-- HELP SCREEN -->
+<div id="screen-help" class="screen">
+  <div class="help-wrap">
+    <button class="back-btn" onclick="App.showSetup()">← Back</button>
+    <h2>Setting up Notion</h2>
+    <div class="help-step">
+      <div class="step-n">1</div>
+      <div>
+        <strong>Create an integration</strong>
+        <p>Go to <code>notion.so/my-integrations</code> → New integration → give it a name → copy the Internal Integration Token</p>
+      </div>
+    </div>
+    <div class="help-step">
+      <div class="step-n">2</div>
+      <div>
+        <strong>Create two databases in Notion</strong>
+        <p>One called <code>Asset Registry</code> and one called <code>Inspections Log</code>. See the schema guide below.</p>
+      </div>
+    </div>
+    <div class="help-step">
+      <div class="step-n">3</div>
+      <div>
+        <strong>Share each database with your integration</strong>
+        <p>Open the database → ··· menu → Connections → Add your integration</p>
+      </div>
+    </div>
+    <div class="help-step">
+      <div class="step-n">4</div>
+      <div>
+        <strong>Copy the database IDs</strong>
+        <p>Open the database as a full page → copy from the URL:<br><code>notion.so/<strong>DATABASE_ID</strong>?v=...</code></p>
+      </div>
+    </div>
+    <div class="schema-box">
+      <div class="schema-title">Asset Registry — required properties</div>
+      <div class="schema-row"><code>Name</code> <span>Title (default)</span></div>
+      <div class="schema-row"><code>Building</code> <span>Select</span></div>
+      <div class="schema-row"><code>Category</code> <span>Select</span></div>
+      <div class="schema-row"><code>Status</code> <span>Select: OK / Monitor / Urgent / Due soon</span></div>
+      <div class="schema-row"><code>Last inspected</code> <span>Date</span></div>
+      <div class="schema-row"><code>Next due</code> <span>Date</span></div>
+      <div class="schema-row"><code>Notes</code> <span>Rich text</span></div>
+    </div>
+    <div class="schema-box">
+      <div class="schema-title">Inspections Log — required properties</div>
+      <div class="schema-row"><code>Name</code> <span>Title — auto-filled</span></div>
+      <div class="schema-row"><code>Asset</code> <span>Relation → Asset Registry</span></div>
+      <div class="schema-row"><code>Inspector</code> <span>Rich text</span></div>
+      <div class="schema-row"><code>Date</code> <span>Date</span></div>
+      <div class="schema-row"><code>Condition</code> <span>Select: Good / Monitor / Urgent</span></div>
+      <div class="schema-row"><code>Checklist</code> <span>Rich text — auto-filled</span></div>
+      <div class="schema-row"><code>Notes</code> <span>Rich text</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- MAIN APP -->
+<div id="screen-app" class="screen">
+
+  <!-- Top bar -->
+  <div class="topbar">
+    <div class="topbar-left">
+      <div class="logo-sm">CA</div>
+      <div id="topbar-title" class="topbar-title">Dashboard</div>
+    </div>
+    <div class="topbar-right">
+      <div id="sync-badge" class="sync-badge hidden"></div>
+      <button class="icon-btn" onclick="App.syncQueue()" title="Sync offline data">↑</button>
+      <button class="icon-btn" onclick="App.reload()" title="Refresh">⟳</button>
+      <button class="icon-btn" onclick="App.resetSetup()" title="Settings">⚙</button>
+    </div>
+  </div>
+
+  <!-- Nav -->
+  <nav class="bottom-nav">
+    <button class="nav-item active" data-tab="dashboard" onclick="App.tab('dashboard',this)">
+      <span class="nav-icon">◈</span><span class="nav-label">Dashboard</span>
+    </button>
+    <button class="nav-item" data-tab="assets" onclick="App.tab('assets',this)">
+      <span class="nav-icon">☰</span><span class="nav-label">Assets</span>
+    </button>
+    <button class="nav-item nav-center" data-tab="inspect" onclick="App.tab('inspect',this)" title="New inspection">
+      <span class="nav-icon">+</span>
+      <span class="nav-label" style="color:#fff;font-size:8px;margin-top:2px">Inspect</span>
+    </button>
+    <button class="nav-item" data-tab="workorders" onclick="App.tab('workorders',this)">
+      <span class="nav-icon">🔧</span><span class="nav-label">Orders</span>
+    </button>
+    <button class="nav-item" data-tab="inventory" onclick="App.tab('inventory',this)">
+      <span class="nav-icon">📦</span><span class="nav-label">Inventory</span>
+    </button>
+  </nav>
+
+  <!-- Tab: Dashboard -->
+  <div id="tab-dashboard" class="tab active">
+    <div class="scroll-body">
+
+      <!-- Section 1: Resource consumption -->
+      <div class="dash-block">
+        <div class="dash-block-title">Resource consumption <span class="dash-block-sub">This month</span></div>
+        <div class="res-grid">
+          <div class="rcard rcard-elec">
+            <div class="rc-top"><span class="rc-lbl rc-lbl-elec">Electricity</span><span class="rc-badge rc-manual">manual</span></div>
+            <div class="rc-val rc-val-elec" id="elec-val">—</div>
+            <div class="rc-unit">kWh</div>
+            <div class="rc-delta" id="elec-delta"></div>
+            <canvas class="spark" id="elec-spark"></canvas>
+          </div>
+          <div class="rcard rcard-water">
+            <div class="rc-top"><span class="rc-lbl rc-lbl-water">Water</span><span class="rc-badge rc-auto">auto</span></div>
+            <div class="rc-val rc-val-water" id="water-val">—</div>
+            <div class="rc-unit">m³</div>
+            <div class="rc-delta" id="water-delta"></div>
+            <canvas class="spark" id="water-spark"></canvas>
+          </div>
+        </div>
+        <button class="log-reading-btn" onclick="App.showMeterReading()">+ Log electricity reading</button>
+      </div>
+
+      <!-- Section 2: Infrastructure management -->
+      <div class="dash-block">
+        <div class="dash-block-title">Infrastructure management</div>
+        <div class="stats-grid" id="stats-grid">
+          <div class="stat-card urgent"><div class="stat-n" id="st-urgent">—</div><div class="stat-l">Urgent</div></div>
+          <div class="stat-card warn"><div class="stat-n" id="st-due">—</div><div class="stat-l">Due soon</div></div>
+          <div class="stat-card ok"><div class="stat-n" id="st-ok">—</div><div class="stat-l">Open orders</div></div>
+        </div>
+        <div class="section-head" style="margin-top:.75rem">By infrastructure</div>
+        <div id="building-bars" class="building-bars"></div>
+        <div class="section-head" style="margin-top:.75rem">Needs attention</div>
+        <div id="attention-list" class="card-list"></div>
+        <div class="section-head" style="margin-top:.75rem">Open work orders</div>
+        <div id="wo-dashboard-list" class="card-list"></div>
+        <div class="section-head" style="margin-top:.75rem">Recent inspections</div>
+        <div id="recent-list" class="card-list"></div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Meter reading overlay -->
+  <div id="meter-overlay" class="detail-overlay hidden">
+    <div class="detail-inner">
+      <button class="detail-back" onclick="App.closeMeterReading()">← Back</button>
+      <div style="font-size:17px;font-weight:600;margin-bottom:4px">Log electricity reading</div>
+      <div style="font-size:13px;color:var(--color-text-secondary);margin-bottom:1.25rem">Enter the cumulative kWh value shown on the meter dial</div>
+      <div class="form-card">
+        <div class="field-group">
+          <label>Meter reading (kWh)</label>
+          <input type="number" id="meter-reading" placeholder="e.g. 48320">
+          <span class="field-hint" id="meter-prev-hint"></span>
+        </div>
+        <div class="field-group">
+          <label>Date</label>
+          <input type="date" id="meter-date">
+        </div>
+        <div class="field-group">
+          <label>Logged by</label>
+          <input type="text" id="meter-by" placeholder="Your name">
+        </div>
+        <button class="btn-primary" onclick="App.saveMeterReading()">Save reading</button>
+        <div id="meter-feedback" class="form-feedback hidden"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab: Assets -->
+  <div id="tab-assets" class="tab">
+    <div class="search-bar-wrap">
+      <div style="display:flex;gap:8px;align-items:center">
+        <input class="search-input" id="asset-search" placeholder="Search assets…" oninput="App.filterAssets()" style="flex:1;margin-bottom:0">
+        <button class="filter-drawer-btn" id="asset-filter-btn" onclick="App.openAssetDrawer()">⚙ Filter <span class="filter-dot" id="asset-filter-dot"></span></button>
+      </div>
+      <div class="chips-row" id="asset-chips"></div>
+      <div class="results-mini" id="asset-results-mini"></div>
+    </div>
+    <div class="scroll-body scroll-body--search" id="asset-list"></div>
+
+    <!-- Filter drawer -->
+    <div class="drawer-overlay" id="asset-drawer-overlay" onclick="App.closeAssetDrawer()"></div>
+    <div class="drawer" id="asset-drawer">
+      <div class="drawer-handle-bar"></div>
+      <div class="drawer-head">
+        <span class="drawer-title">Filter assets</span>
+        <span class="drawer-reset" onclick="App.resetAssetDrawer()">Reset</span>
+      </div>
+      <div class="drawer-body">
+        <div class="drawer-group">
+          <div class="drawer-group-label">Status</div>
+          <div class="drawer-pills">
+            <button class="dpill dpill-active" data-key="status" data-val="" onclick="App.drawerPick(this)">All</button>
+            <button class="dpill" data-key="status" data-val="Urgent" onclick="App.drawerPick(this)">Urgent</button>
+            <button class="dpill" data-key="status" data-val="Monitor" onclick="App.drawerPick(this)">Monitor</button>
+            <button class="dpill" data-key="status" data-val="Due soon" onclick="App.drawerPick(this)">Due soon</button>
+            <button class="dpill" data-key="status" data-val="OK" onclick="App.drawerPick(this)">OK</button>
+          </div>
+        </div>
+        <div class="drawer-group">
+          <div class="drawer-group-label drawer-label-building">● Buildings</div>
+          <div class="drawer-pills">
+            <button class="dpill" data-key="infra" data-val="B1 Hill — Class & Lab" onclick="App.drawerPick(this)">B1 Class & Lab</button>
+            <button class="dpill" data-key="infra" data-val="B1 Hill — Art & Library" onclick="App.drawerPick(this)">B1 Art & Library</button>
+            <button class="dpill" data-key="infra" data-val="B3 Cafeteria & Kitchen" onclick="App.drawerPick(this)">B3 Cafeteria</button>
+            <button class="dpill" data-key="infra" data-val="B5 Farmschool" onclick="App.drawerPick(this)">B5 Farmschool</button>
+            <button class="dpill" data-key="infra" data-val="B7 Varuna & Surya" onclick="App.drawerPick(this)">B7 Varuna & Surya</button>
+            <button class="dpill" data-key="infra" data-val="B8 Akash" onclick="App.drawerPick(this)">B8 Akash</button>
+            <button class="dpill" data-key="infra" data-val="B8 Prithvi" onclick="App.drawerPick(this)">B8 Prithvi</button>
+            <button class="dpill" data-key="infra" data-val="B9 Sport auditorium" onclick="App.drawerPick(this)">B9 Sport aud.</button>
+            <button class="dpill" data-key="infra" data-val="B10 Oneness" onclick="App.drawerPick(this)">B10 Oneness</button>
+            <button class="dpill" data-key="infra" data-val="B10.1 Pavilion" onclick="App.drawerPick(this)">B10.1 Pavilion</button>
+          </div>
+        </div>
+        <div class="drawer-group">
+          <div class="drawer-group-label drawer-label-landscape">● Landscape</div>
+          <div class="drawer-pills">
+            <button class="dpill" data-key="infra" data-val="L1 Land General" onclick="App.drawerPick(this)">L1 Land General</button>
+            <button class="dpill" data-key="infra" data-val="L6 Altar" onclick="App.drawerPick(this)">L6 Altar</button>
+            <button class="dpill" data-key="infra" data-val="L8 Agri Shed" onclick="App.drawerPick(this)">L8 Agri Shed</button>
+            <button class="dpill" data-key="infra" data-val="L10.1 Sport shelters" onclick="App.drawerPick(this)">L10.1 Sport shelters</button>
+          </div>
+        </div>
+        <div class="drawer-group">
+          <div class="drawer-group-label drawer-label-engineering">● Engineering</div>
+          <div class="drawer-pills" id="engineering-pills">
+            <button class="dpill" data-key="infra" data-val="E7 Genset" onclick="App.drawerPick(this)">E7 Genset</button>
+          </div>
+        </div>
+        <div class="drawer-group">
+          <div class="drawer-group-label drawer-label-type">Asset type</div>
+          <div class="drawer-pills">
+            <button class="dpill dpill-active" data-key="type" data-val="" onclick="App.drawerPick(this)">All</button>
+            <button class="dpill" data-key="type" data-val="Plumbing" onclick="App.drawerPick(this)">Plumbing</button>
+            <button class="dpill" data-key="type" data-val="Electrical" onclick="App.drawerPick(this)">Electrical</button>
+            <button class="dpill" data-key="type" data-val="HVAC" onclick="App.drawerPick(this)">HVAC</button>
+            <button class="dpill" data-key="type" data-val="Carpentry" onclick="App.drawerPick(this)">Carpentry</button>
+            <button class="dpill" data-key="type" data-val="Mechanical" onclick="App.drawerPick(this)">Mechanical</button>
+            <button class="dpill" data-key="type" data-val="Fire safety" onclick="App.drawerPick(this)">Fire safety</button>
+            <button class="dpill" data-key="type" data-val="Civil" onclick="App.drawerPick(this)">Civil</button>
+            <button class="dpill" data-key="type" data-val="Landscaping" onclick="App.drawerPick(this)">Landscaping</button>
+          </div>
+        </div>
+      </div>
+      <div class="drawer-footer">
+        <button class="btn-primary" onclick="App.applyAssetDrawer()">Show results</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab: Inspect -->
+  <div id="tab-inspect" class="tab">
+    <div class="scroll-body">
+      <div class="form-card">
+        <div class="form-section-title">Location</div>
+        <div class="field-group">
+          <label>Building</label>
+          <select id="f-building" onchange="App.filterFormAssets()">
+            <option value="">Select building…</option>
+          </select>
+        </div>
+        <div class="field-group">
+          <label>Asset</label>
+          <select id="f-asset">
+            <option value="">Select asset…</option>
+          </select>
+        </div>
+        <div class="field-group">
+          <label>Inspector name</label>
+          <input type="text" id="f-inspector" placeholder="Your name">
+        </div>
+
+        <div class="form-section-title">Checklist</div>
+        <div id="form-checklist" class="checklist-wrap"></div>
+
+        <div class="form-section-title">Overall condition</div>
+        <div class="condition-options" id="condition-opts">
+          <div class="cond-opt cond-ok selected" onclick="App.selectCondition('Good',this)">
+            <div class="cond-dot"></div>
+            <div><div class="cond-label">Good</div><div class="cond-sub">No issues found</div></div>
+          </div>
+          <div class="cond-opt cond-warn" onclick="App.selectCondition('Monitor',this)">
+            <div class="cond-dot"></div>
+            <div><div class="cond-label">Monitor</div><div class="cond-sub">Minor issues, watch closely</div></div>
+          </div>
+          <div class="cond-opt cond-urgent" onclick="App.selectCondition('Urgent',this)">
+            <div class="cond-dot"></div>
+            <div><div class="cond-label">Urgent</div><div class="cond-sub">Action required now</div></div>
+          </div>
+        </div>
+
+        <div class="field-group" style="margin-top:1rem">
+          <label>Notes / observations</label>
+          <textarea id="f-notes" placeholder="Describe what you found, actions taken, or follow-up needed…"></textarea>
+        </div>
+        <div class="field-group">
+          <label>Next inspection due</label>
+          <input type="date" id="f-next-due">
+          <span class="field-hint" id="f-next-due-hint">Select an asset to auto-calculate</span>
+        </div>
+
+        <button class="btn-primary" onclick="App.submitInspection()">Save inspection</button>
+        <div id="form-feedback" class="form-feedback hidden"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab: Queue -->
+  <div id="tab-queue" class="tab">
+    <div class="scroll-body">
+      <div class="queue-header">
+        <p>Inspections saved offline while there was no connection. They will sync to Notion when you tap the button below.</p>
+        <button class="btn-primary" onclick="App.syncQueue()">Sync now ↑</button>
+      </div>
+      <div id="queue-list" class="card-list"></div>
+      <div id="queue-empty" class="empty-state hidden">All synced — nothing pending</div>
+    </div>
+  </div>
+
+  <!-- Tab: Print -->
+  <div id="tab-print" class="tab">
+    <div class="scroll-body">
+      <div class="form-card">
+        <div class="field-group">
+          <label>Filter by building</label>
+          <select id="print-filter" onchange="App.renderPrint()">
+            <option value="">All buildings</option>
+          </select>
+        </div>
+        <button class="btn-primary" onclick="App.doPrint()">Open print view ⎙</button>
+      </div>
+      <div id="print-preview" class="print-preview"></div>
+    </div>
+  </div>
+
+  <!-- Tab: Work orders -->
+  <div id="tab-workorders" class="tab">
+    <div class="wo-toolbar">
+      <div class="filter-pills" id="wo-filter-pills" style="flex:1">
+        <button class="pill active" onclick="App.setWOFilter('',this)">All</button>
+        <button class="pill" onclick="App.setWOFilter('Open',this)">Open</button>
+        <button class="pill" onclick="App.setWOFilter('Assigned',this)">Assigned</button>
+        <button class="pill" onclick="App.setWOFilter('In progress',this)">In progress</button>
+        <button class="pill" onclick="App.setWOFilter('Done',this)">Done</button>
+      </div>
+      <button class="btn-new-wo" onclick="App.showNewWO()">+ New</button>
+    </div>
+    <div class="scroll-body scroll-body--search" id="wo-list"></div>
+  </div>
+
+  <!-- New work order form overlay -->
+  <div id="wo-form-overlay" class="detail-overlay hidden">
+    <div class="detail-inner">
+      <button class="detail-back" onclick="App.closeNewWO()">← Back</button>
+      <div style="font-size:17px;font-weight:600;margin-bottom:1.25rem">New repair request</div>
+      <div class="form-card">
+        <div class="field-group">
+          <label>Title / issue summary</label>
+          <input type="text" id="wo-title" placeholder="e.g. Gym HVAC making grinding noise">
+        </div>
+        <div class="field-group">
+          <label>Building</label>
+          <select id="wo-building" onchange="App.filterWOAssets()">
+            <option value="">Select building…</option>
+          </select>
+        </div>
+        <div class="field-group">
+          <label>Asset (optional)</label>
+          <select id="wo-asset">
+            <option value="">Select asset…</option>
+          </select>
+        </div>
+        <div class="field-group">
+          <label>Priority</label>
+          <div class="priority-options" id="priority-opts">
+            <div class="pri-opt pri-routine selected" onclick="App.selectPriority('Routine',this)">
+              <div class="pri-dot"></div>
+              <div><div class="pri-label">Routine</div><div class="pri-sub">No urgency, schedule when convenient</div></div>
+            </div>
+            <div class="pri-opt pri-urgent" onclick="App.selectPriority('Urgent',this)">
+              <div class="pri-dot"></div>
+              <div><div class="pri-label">Urgent</div><div class="pri-sub">Needs attention within days</div></div>
+            </div>
+            <div class="pri-opt pri-emergency" onclick="App.selectPriority('Emergency',this)">
+              <div class="pri-dot"></div>
+              <div><div class="pri-label">Emergency</div><div class="pri-sub">Immediate action required</div></div>
+            </div>
+          </div>
+        </div>
+        <div class="field-group">
+          <label>Handler</label>
+          <select id="wo-handler">
+            <option value="Internal">Internal maintenance</option>
+            <option value="External">External contractor</option>
+          </select>
+        </div>
+        <div class="field-group">
+          <label>Assign to (name or company)</label>
+          <input type="text" id="wo-assigned" placeholder="Optional">
+        </div>
+        <div class="field-group">
+          <label>Description</label>
+          <textarea id="wo-description" placeholder="Describe the issue, location, what was observed…"></textarea>
+        </div>
+        <div class="field-group">
+          <label>Reported by</label>
+          <input type="text" id="wo-reporter" placeholder="Your name">
+        </div>
+        <button class="btn-primary" onclick="App.submitWorkOrder()">Submit request</button>
+        <div id="wo-feedback" class="form-feedback hidden"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab: Inventory -->
+  <div id="tab-inventory" class="tab">
+    <div class="inv-toolbar">
+      <input class="search-input" id="inv-search" placeholder="Search parts…" oninput="App.filterInventory()" style="flex:1;margin-bottom:0">
+      <button class="btn-new-wo" onclick="App.showWithdraw()">− Withdraw</button>
+    </div>
+    <div id="inv-low-stock-banner" class="low-stock-banner hidden"></div>
+    <div class="scroll-body scroll-body--search" id="inv-list"></div>
+  </div>
+
+  <!-- Withdraw overlay -->
+  <div id="withdraw-overlay" class="detail-overlay hidden">
+    <div class="detail-inner">
+      <button class="detail-back" onclick="App.closeWithdraw()">← Back</button>
+      <div style="font-size:17px;font-weight:600;margin-bottom:1.25rem">Log withdrawal</div>
+      <div class="form-card">
+        <div class="field-group">
+          <label>Item</label>
+          <select id="w-item" onchange="App.onWithdrawItemChange()">
+            <option value="">Select item…</option>
+          </select>
+        </div>
+        <div id="w-stock-info" class="stock-info hidden"></div>
+        <div class="field-group">
+          <label>Quantity to withdraw</label>
+          <input type="number" id="w-qty" min="1" value="1" placeholder="1">
+        </div>
+        <div class="field-group">
+          <label>Reason</label>
+          <select id="w-reason">
+            <option value="Work order repair">Work order repair</option>
+            <option value="Preventive maintenance">Preventive maintenance</option>
+            <option value="Emergency repair">Emergency repair</option>
+            <option value="Other">Other</option>
+          </select>
+        </div>
+        <div class="field-group">
+          <label>Link to work order (optional)</label>
+          <select id="w-workorder">
+            <option value="">None</option>
+          </select>
+        </div>
+        <div class="field-group">
+          <label>Staff name</label>
+          <input type="text" id="w-staff" placeholder="Your name">
+        </div>
+        <button class="btn-primary" onclick="App.submitWithdrawal()">Confirm withdrawal</button>
+        <div id="w-feedback" class="form-feedback hidden"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Item detail overlay -->
+  <div id="inv-detail-overlay" class="detail-overlay hidden">
+    <div class="detail-inner">
+      <button class="detail-back" onclick="App.closeInvDetail()">← Back</button>
+      <div id="inv-detail-content"></div>
+      <div style="display:flex;gap:8px;margin-top:1rem">
+        <button class="btn-primary" style="flex:1" onclick="App.showWithdrawFor()">− Withdraw</button>
+        <button class="btn-secondary" style="flex:1" onclick="App.showRestockFor()">+ Restock</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Work order detail overlay -->
+  <div id="wo-detail-overlay" class="detail-overlay hidden">
+    <div class="detail-inner">
+      <button class="detail-back" onclick="App.closeWODetail()">← Back</button>
+      <div id="wo-detail-content"></div>
+    </div>
+  </div>
+
+  <!-- Asset detail overlay -->
+  <div id="asset-detail" class="detail-overlay hidden">
+    <div class="detail-inner">
+      <button class="detail-back" onclick="App.closeDetail()">← Back</button>
+      <div id="detail-content"></div>
+      <button class="btn-primary" style="margin:1rem 0" onclick="App.inspectFromDetail()">Start inspection</button>
+    </div>
+  </div>
+
+  <!-- Loading overlay -->
+  <div id="loading" class="loading-overlay hidden">
+    <div class="spinner"></div>
+    <div id="loading-msg" class="loading-msg">Loading…</div>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" class="toast hidden"></div>
+
+</div><!-- /screen-app -->
+
+<script src="js/notion.js"></script>
+<script src="js/store.js"></script>
+<script src="js/app.js"></script>
+<script>
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js').catch(()=>{});
+  }
+</script>
+</body>
+</html>
