@@ -604,6 +604,13 @@ code { font-family: var(--mono); font-size: 12px; background: var(--bg3); paddin
 .dpill.dpill-active,.dpill.selected{background:#38bdf8;color:#fff;border-color:#38bdf8}
 .drawer-footer{padding:10px 16px 14px;border-top:0.5px solid var(--border);flex-shrink:0}
 
+/* ── Share overlay ── */
+.share-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:200;display:flex;align-items:center;justify-content:center;padding:1rem}
+.share-card{background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--radius);padding:1.25rem;width:100%;max-width:360px}
+.share-title{font-size:16px;font-weight:600;color:var(--text);margin-bottom:6px}
+.share-desc{font-size:13px;color:var(--text2);line-height:1.5;margin-bottom:10px}
+.share-link-text{font-size:10px;color:var(--text3);word-break:break-all;background:var(--bg);border-radius:6px;padding:10px;font-family:var(--font-mono);line-height:1.5;border:0.5px solid var(--border)}
+
 /* ── Utilities ── */
 .setup-link-box{margin-top:12px;background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--radius);padding:12px}
 .setup-link-label{font-size:12px;color:var(--text2);margin-bottom:8px;line-height:1.5}
@@ -733,8 +740,24 @@ code { font-family: var(--mono); font-size: 12px; background: var(--bg3); paddin
       <div id="sync-badge" class="sync-badge hidden"></div>
       <button class="icon-btn" onclick="App.syncQueue()" title="Sync offline data">↑</button>
       <button class="icon-btn" onclick="App.reload()" title="Refresh">⟳</button>
+      <button class="icon-btn" onclick="App.shareSetupLink()" title="Share setup link">⇪</button>
       <button class="icon-btn" onclick="App.resetSetup()" title="Settings">⚙</button>
     </div>
+  </div>
+
+  <!-- Share link toast overlay -->
+  <div id="share-overlay" class="share-overlay hidden">
+    <div class="share-card">
+      <div class="share-title">Setup link</div>
+      <div class="share-desc">Send this link to your team. Opening it on any device will configure the app automatically.</div>
+      <div id="share-link-text" class="share-link-text"></div>
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <button class="btn-primary" style="flex:1" onclick="App.copyShareLink()">Copy link</button>
+        <button class="btn-secondary" style="flex:1" onclick="App.closeShareOverlay()">Close</button>
+      </div>
+      <div id="share-copied" class="hidden" style="font-size:12px;color:var(--ok);margin-top:8px;text-align:center">Copied to clipboard ✓</div>
+    </div>
+  </div>
   </div>
 
   <!-- Nav -->
@@ -1188,7 +1211,7 @@ const Notion = {
   },
 
   async _call(path, method, body) {
-    const res = await fetch('/api/notion', {
+    const res = await fetch('/.netlify/functions/notion', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1779,6 +1802,33 @@ const App = {
 
   showHelp() { this.showScreen('help'); },
   showSetup() { this.showScreen('setup'); },
+
+  shareSetupLink() {
+    const cfg = Store.getConfig();
+    if (!cfg) return;
+    const base = window.location.origin + window.location.pathname;
+    const params = new URLSearchParams({ t: cfg.token, a: cfg.assetsDb, i: cfg.inspectionsDb });
+    if (cfg.workOrdersDb) params.set('w', cfg.workOrdersDb);
+    if (cfg.inventoryDb) params.set('v', cfg.inventoryDb);
+    if (cfg.movementsDb) params.set('m', cfg.movementsDb);
+    const link = `${base}?${params.toString()}`;
+    document.getElementById('share-link-text').textContent = link;
+    document.getElementById('share-copied').classList.add('hidden');
+    document.getElementById('share-overlay').classList.remove('hidden');
+  },
+
+  copyShareLink() {
+    const text = document.getElementById('share-link-text').textContent;
+    navigator.clipboard.writeText(text).then(() => {
+      const el = document.getElementById('share-copied');
+      el.classList.remove('hidden');
+      setTimeout(() => el.classList.add('hidden'), 2500);
+    });
+  },
+
+  closeShareOverlay() {
+    document.getElementById('share-overlay').classList.add('hidden');
+  },
 
   generateSetupLink() {
     const token = document.getElementById('setup-token').value.trim();
