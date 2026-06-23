@@ -1,11 +1,17 @@
 // netlify/functions/send-email.js
-// Sends a transactional email via Resend.
+// Sends transactional emails via Resend.
 // Expects a JSON body: { to, subject, body }
-// Uses RESEND_API_KEY from Netlify environment variables.
-// Returns { ok: true, id } on success or { ok: false, error } on failure.
+//   `to` can be a string or an array of email addresses.
+//   Each recipient gets their own individual Resend API call so that
+//   a single failed address never blocks delivery to the others.
+//
+// Environment variables (set in Netlify dashboard):
+//   RESEND_API_KEY  — your Resend secret key
+//   RESEND_FROM     — verified sender, e.g. "Campus Assets <noreply@yourdomain.com>"
+//                     Falls back to onboarding@resend.dev for local testing ONLY —
+//                     that sandbox address only delivers to your own Resend account email.
 
 exports.handler = async (event) => {
-  // Only accept POST
   if (event.httpMethod !== 'POST') {
     return {
       statusCode: 405,
@@ -14,7 +20,6 @@ exports.handler = async (event) => {
     };
   }
 
-  // Parse payload
   let payload;
   try {
     payload = JSON.parse(event.body || '{}');
@@ -28,7 +33,6 @@ exports.handler = async (event) => {
 
   const { to, subject, body } = payload;
 
-  // Validate required fields
   if (!to || !subject || !body) {
     return {
       statusCode: 400,
@@ -46,53 +50,73 @@ exports.handler = async (event) => {
     };
   }
 
-  // Normalise 'to' — Resend accepts a string or an array
-  const recipients = Array.isArray(to) ? to : [to];
+  const fromAddress = process.env.RESEND_FROM || 'Campus Assets <onboarding@resend.dev>';
 
-  // Build plain-text and simple HTML bodies
+  const recipients = (Array.isArray(to) ? to : [to]).filter(Boolean);
+  if (!recipients.length) {
+    return {
+      statusCode: 400,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ok: false, error: 'No valid recipients' }),
+    };
+  }
+
   const textBody = String(body);
-  const htmlBody = `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14px;line-height:1.5;color:#222">${
+  const htmlBody = `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14px;line-height:1.6;color:#222">${
     textBody.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>')
   }</div>`;
 
-  try {
-    const res = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        // Default Resend sandbox domain. Replace with your own domain once verified.
-        from: 'Campus Assets <onboarding@resend.dev>',
-        to: recipients,
-        subject,
-        text: textBody,
-        html: htmlBody,
-      }),
-    });
+  const results = await Promise.allSettled(
+    recipients.map(async (addr) => {
+      const res = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          from: fromAddress,
+          to: [addr],
+          subject,
+          text: textBody,
+          html: htmlBody,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        console.error(`[send-email] Resend error for ${addr}:`, res.status, data);
+        throw new Error(data?.message || `Resend HTTP ${res.status}`);
+      }
+      console.log(`[send-email] ✓ sent to ${addr}, id:`, data?.id);
+      return { addr, id: data?.id };
+    })
+  );
 
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      console.error('[send-email] Resend error:', res.status, data);
-      return {
-        statusCode: res.status,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ok: false, error: data?.message || `Resend HTTP ${res.status}` }),
-      };
-    }
+  const succeeded = results.filter(r => r.status === 'fulfilled').map(r => r.value);
+  const failed    = results.filter(r => r.status === 'rejected').map((r, i) => ({
+    addr: recipients[results.indexOf(r)],
+    error: r.reason?.message || 'unknown',
+  }));
 
-    return {
-      statusCode: 200,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ok: true, id: data?.id || null }),
-    };
-  } catch (e) {
-    console.error('[send-email] fetch failed:', e.message);
+  console.log(`[send-email] ${succeeded.length}/${recipients.length} delivered`, failed.length ? `| failures: ${JSON.stringify(failed)}` : '');
+
+  if (succeeded.length === 0) {
     return {
       statusCode: 502,
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ok: false, error: e.message || 'Network error calling Resend' }),
+      body: JSON.stringify({ ok: false, error: failed[0]?.error || 'All sends failed', failed }),
     };
   }
+
+  return {
+    statusCode: 200,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      ok: true,
+      id: succeeded[0]?.id || null,
+      sent: succeeded.length,
+      total: recipients.length,
+      ...(failed.length ? { partialFailures: failed } : {}),
+    }),
+  };
 };
