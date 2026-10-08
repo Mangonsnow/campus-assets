@@ -2151,7 +2151,7 @@ const Notion = {
         const pTakenBy = this._findProp(schema, 'Taken by', 'Taken By', 'Staff', 'Person');
         const pDate = this._findProp(schema, 'Date', 'Movement date');
         const pNotes = this._findProp(schema, 'Notes', 'Note', 'Reason', 'Description');
-        const pItem = this._findProp(schema, 'Item', 'Inventory item', 'Inventory Item', 'Items', 'Product');
+        const pItem = this._findProp(schema, 'Item', 'Inventory', 'Inventory item', 'Inventory Item', 'Items', 'Product');
         const pWO = this._findProp(schema, 'Work order', 'Work Order', 'WO', 'Order');
 
         console.log('[withdrawInventory] Property mapping:', JSON.stringify({ pName, pQty, pType, pTakenBy, pDate, pNotes, pItem, pWO }));
@@ -2264,7 +2264,7 @@ const Notion = {
         const pType = this._findProp(schema, 'Movement type', 'Movement Type', 'Type');
         const pTakenBy = this._findProp(schema, 'Taken by', 'Taken By', 'Staff', 'Person');
         const pDate = this._findProp(schema, 'Date', 'Movement date');
-        const pItem = this._findProp(schema, 'Item', 'Inventory item', 'Inventory Item', 'Items', 'Product');
+        const pItem = this._findProp(schema, 'Item', 'Inventory', 'Inventory item', 'Inventory Item', 'Items', 'Product');
 
         const mp = {};
         if (pName) {
@@ -5308,6 +5308,7 @@ const App = {
       `Priority:       ${w.priority || '—'}`,
       `Infrastructure: ${infraName}`,
       `Asset:          ${assetName}`,
+      `Reported by:    ${w.reportedBy || '—'}`,
       `Handler:        ${w.handlerType || '—'}${w.assignedTo ? ' — ' + w.assignedTo : ''}`,
       `Estimate:       ${w.estimate || '(not provided)'}`,
       `Amount:         ${w.amount != null ? w.amount.toLocaleString('en-IN') : '(not provided)'}`,
@@ -5331,6 +5332,7 @@ const App = {
       `Title:          ${w.title || '—'}`,
       infraName ? `Infrastructure: ${infraName}` : '',
       `Asset:          ${assetName}`,
+      `Reported by:    ${w.reportedBy || '—'}`,
       `Repair type:    ${w.repairType || '—'}`,
       `Vendor/handler: ${w.assignedTo || w.handlerType || '—'}`,
       `Estimate:       ${w.estimate || '—'}`,
@@ -5413,7 +5415,7 @@ const App = {
       if (purchaseEmails.length) {
         this.sendEmail({
           to: purchaseEmails,
-          subject: `[Campus Assets] Payment approval — ${w.title || 'work order'}`,
+          subject: `[Campus Assets] Work complete — payment approval needed — ${w.title || 'work order'}`,
           body: this._buildPaymentEmail(w),
         }).then(res => {
           if (!res.ok) {
@@ -5435,6 +5437,7 @@ const App = {
       document.getElementById('repair-prompt-overlay').classList.remove('hidden');
     } else if (newStatus === 'Done') {
       console.warn('[advanceWO] Done but repair prompt skipped — Notion._repairHistoryDb is', Notion._repairHistoryDb, '— configure Repair History DB in setup to enable this');
+      this.toast('Order marked done. To auto-log repair records, add the Repair History DB ID in Settings.');
     }
   },
 
