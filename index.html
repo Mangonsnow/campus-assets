@@ -622,6 +622,12 @@ code { font-family: var(--mono); font-size: 12px; background: var(--bg3); paddin
 }
 .bypass-hint { font-size: 11px; color: #fb923c; margin-top: 2px; }
 .signoff-note { font-size: 12px; color: var(--text2); line-height: 1.4; }
+.btn-followup {
+  background: rgba(167,139,250,0.10); color: #a78bfa;
+  border: 1px solid rgba(167,139,250,0.35); border-radius: var(--radius-sm);
+  padding: 11px 14px; font-size: 14px; font-weight: 500;
+  cursor: pointer; font-family: var(--font); width: 100%; margin-top: 6px;
+}
 
 /* priority selector */
 .priority-options { display: flex; flex-direction: column; gap: 6px; }
@@ -1236,7 +1242,7 @@ code { font-family: var(--mono); font-size: 12px; background: var(--bg3); paddin
           </div>
         </div>
         <div class="drawer-group">
-          <div class="drawer-group-label drawer-label-building">● Buildings</div>
+          <div class="drawer-group-label drawer-label-building">● Infrastructure</div>
           <div class="drawer-pills">
             <button class="dpill" data-key="infra" data-val="B1 Hill — Class & Lab" onclick="App.drawerPick(this)">B1 Class & Lab</button>
             <button class="dpill" data-key="infra" data-val="B1 Hill — Art & Library" onclick="App.drawerPick(this)">B1 Art & Library</button>
@@ -1292,9 +1298,9 @@ code { font-family: var(--mono); font-size: 12px; background: var(--bg3); paddin
       <div class="form-card">
         <div class="form-section-title">Location</div>
         <div class="field-group">
-          <label>Building</label>
+          <label>Infrastructure</label>
           <select id="f-building" onchange="App.filterFormAssets()">
-            <option value="">Select building…</option>
+            <option value="">Select infrastructure…</option>
           </select>
         </div>
         <div class="field-group">
@@ -1408,9 +1414,9 @@ code { font-family: var(--mono); font-size: 12px; background: var(--bg3); paddin
           <input type="text" id="wo-title" placeholder="e.g. Gym HVAC making grinding noise">
         </div>
         <div class="field-group">
-          <label>Building</label>
+          <label>Infrastructure</label>
           <select id="wo-building" onchange="App.filterWOAssets()">
-            <option value="">Select building…</option>
+            <option value="">Select infrastructure…</option>
           </select>
         </div>
         <div class="field-group">
@@ -3214,17 +3220,38 @@ const App = {
 
   showHelp() { this.showScreen('help'); },
   showSetup() {
-    const cfg = Store.getConfig();
-    const fill = (id, ...keys) => {
+    const cfg = Store.getConfig() || {};
+    // Pre-fill all DB ID fields from saved config so users see what is already configured
+    const dbFields = [
+      ['setup-token',          cfg.token],
+      ['setup-assets-db',      cfg.assetsDb],
+      ['setup-inspections-db', cfg.inspectionsDb],
+      ['setup-wo-db',          cfg.workOrdersDb],
+      ['setup-inv-db',         cfg.inventoryDb],
+      ['setup-mov-db',         cfg.movementsDb],
+      ['setup-vendors-db',     cfg.vendorsDb],
+      ['setup-infra-db',       cfg.infraDb],
+      ['setup-repair-db',      cfg.repairHistoryDb],
+      ['setup-electricity-db', cfg.electricityDb],
+      ['setup-water-db',       cfg.waterDb],
+      ['setup-checklists-db',  cfg.checklistsDb],
+    ];
+    dbFields.forEach(([id, val]) => {
+      const el = document.getElementById(id);
+      if (el && val) el.value = val;
+    });
+    // Email fields — also check localStorage which the settings overlay writes
+    const fillEmail = (id, ...keys) => {
       const el = document.getElementById(id);
       if (!el) return;
       for (const k of keys) { const v = localStorage.getItem(k); if (v) { el.value = v; return; } }
-      if (cfg) { if (id.includes('coord') && cfg.coordinatorEmail) el.value = cfg.coordinatorEmail; if (id.includes('purchase') && cfg.purchaseEmail) el.value = cfg.purchaseEmail; }
+      if (id.includes('coord') && cfg.coordinatorEmail) el.value = cfg.coordinatorEmail;
+      if (id.includes('purchase') && cfg.purchaseEmail) el.value = cfg.purchaseEmail;
     };
-    fill('setup-coord-email-1', 'ca_coordinator_email_1', 'ca_coordinator_email');
-    fill('setup-coord-email-2', 'ca_coordinator_email_2');
-    fill('setup-purchase-email-1', 'ca_purchase_email_1', 'ca_purchase_email');
-    fill('setup-purchase-email-2', 'ca_purchase_email_2');
+    fillEmail('setup-coord-email-1', 'ca_coordinator_email_1', 'ca_coordinator_email');
+    fillEmail('setup-coord-email-2', 'ca_coordinator_email_2');
+    fillEmail('setup-purchase-email-1', 'ca_purchase_email_1', 'ca_purchase_email');
+    fillEmail('setup-purchase-email-2', 'ca_purchase_email_2');
     this.showScreen('setup');
   },
 
@@ -3483,7 +3510,11 @@ const App = {
 
   // ── Building bars ──
   renderBuildingBars() {
-    const buildings = [...new Set(this._assets.map(a => a.building).filter(Boolean))].sort();
+    // Use Infrastructure DB list so entries with zero assets still appear on dashboard.
+    const infraList = Store.getInfrastructure();
+    const buildings = infraList.length
+      ? infraList.map(i => i.name).filter(Boolean).sort()
+      : [...new Set(this._assets.map(a => a.building).filter(Boolean))].sort();
     const el = document.getElementById('building-bars');
     if (!el) return;
     if (!buildings.length) { el.innerHTML = '<div class="empty-state">No data yet</div>'; return; }
@@ -4205,7 +4236,12 @@ const App = {
   },
 
   populateBuildingSelects() {
-    const buildings = [...new Set(this._assets.map(a => a.building).filter(Boolean))].sort();
+    // Use the full infrastructure list from cache so entries with zero assets still appear.
+    // Fall back to deriving from assets if the Infrastructure DB is not configured.
+    const infraList = Store.getInfrastructure();
+    const buildings = infraList.length
+      ? infraList.map(i => i.name).filter(Boolean).sort()
+      : [...new Set(this._assets.map(a => a.building).filter(Boolean))].sort();
     ['f-building', 'print-filter'].forEach(id => {
       const sel = document.getElementById(id);
       if (!sel) return;
@@ -4765,7 +4801,7 @@ const App = {
     <h2>Campus asset inspection worksheet</h2>
     <div class="sub">${building || 'All buildings'} &nbsp;·&nbsp; ${today} &nbsp;·&nbsp; Inspector: _______________________</div>
     <table>
-      <thead><tr><th>Asset</th><th>Building</th><th>Last checked</th><th>Status</th><th>Site check</th><th>Notes</th><th>Sign</th></tr></thead>
+      <thead><tr><th>Asset</th><th>Infrastructure</th><th>Last checked</th><th>Status</th><th>Site check</th><th>Notes</th><th>Sign</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
     <div class="checklist">
@@ -4981,6 +5017,8 @@ const App = {
         actions += `<div class="signoff-note">Signing off confirms the work and sends a payment approval request to the purchase team.</div>`;
         actions += `<button class="btn-primary" onclick="App.signOffWO('${w.id}')">Sign off → request payment ✓</button>`;
       }
+      // Follow-up reminder button — visible on all non-Done orders
+      actions += `<button class="btn-followup" onclick="App.sendWOFollowUp('${w.id}')" title="Send a follow-up reminder email about this work order">🔔 Send follow-up reminder</button>`;
       // Edit and Cancel buttons for all non-Done statuses
       actions += `<div style="display:flex;gap:8px;margin-top:1rem">`;
       actions += `<button class="btn-primary" style="flex:1;background:var(--accent)" onclick="App.editWorkOrder('${w.id}')">Edit</button>`;
@@ -5237,6 +5275,50 @@ const App = {
     if (!w) return;
     w.coordSignoff = true;
     await this.advanceWO(woId, 'Done', { coordSignoff: true });
+  },
+
+  // ── Follow-up reminder — manually triggered from WO detail ──
+  async sendWOFollowUp(woId) {
+    const w = this._workOrders.find(x => x.id === woId);
+    if (!w) return;
+    const asset = this._assets.find(a => a.id === w.assetId);
+    const assetName = asset ? asset.name : (w.assetName || '—');
+    const infraName = asset ? (asset.building || '—') : '—';
+    const { coord: coordEmails } = this._getNotifyEmails();
+    if (!coordEmails.length) {
+      this.toast('No coordinator email configured — add one in Settings.');
+      return;
+    }
+    const created = w.created || '—';
+    const daysOpen = w.created
+      ? Math.round((Date.now() - new Date(w.created).getTime()) / 86400000)
+      : null;
+    const body = [
+      `This is a follow-up reminder for a pending work order.`,
+      ``,
+      `Title:          ${w.title || '—'}`,
+      `Infrastructure: ${infraName}`,
+      `Asset:          ${assetName}`,
+      `Status:         ${w.status || '—'}`,
+      `Priority:       ${w.priority || '—'}`,
+      `Reported by:    ${w.reportedBy || '—'}`,
+      `Created:        ${created}${daysOpen != null ? ` (${daysOpen} day${daysOpen !== 1 ? 's' : ''} ago)` : ''}`,
+      w.assignedTo ? `Assigned to:    ${w.assignedTo}` : '',
+      ``,
+      `Please check on the status of this order and update it in the app.`,
+    ].filter(v => v !== null && v !== undefined).join('\n');
+
+    this.toast('Sending follow-up reminder…');
+    const res = await this.sendEmail({
+      to: coordEmails,
+      subject: `[Campus Assets] Follow-up reminder — ${w.title || 'work order'} (${w.status})`,
+      body,
+    });
+    if (res.ok) {
+      this.toast('Follow-up reminder sent ✓');
+    } else {
+      this.toast('Failed to send reminder — check email settings.');
+    }
   },
 
   // ── Send an email via the Netlify send-email function (non-blocking by design) ──
