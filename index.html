@@ -5556,7 +5556,7 @@ const App = {
     // Populate vendor dropdown
     const vendorSel = document.getElementById('repair-vendor');
     vendorSel.innerHTML = '<option value="">N/A – In-house</option>';
-    const vendors = Store.getVendors();
+    const vendors = this._vendors || [];
     vendors.forEach(v => {
       const opt = document.createElement('option');
       opt.value = v.id;
