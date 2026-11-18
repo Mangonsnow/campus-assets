@@ -5531,7 +5531,12 @@ const App = {
   openRepairForm() {
     document.getElementById('repair-prompt-overlay').classList.add('hidden');
     const w = this._pendingRepairWO;
-    if (!w) return;
+    console.log('[openRepairForm] _pendingRepairWO =', w ? { id: w.id, title: w.title } : null);
+    if (!w) {
+      this.toast('⚠ Debug: repair WO reference lost — please report this. Try marking the order Done again.');
+      return;
+    }
+    try {
 
     // Build auto-filled name: "WO title — building — Mon YYYY"
     const asset = this._assets.find(a => a.id === w.assetId);
@@ -5572,6 +5577,11 @@ const App = {
 
     document.getElementById('repair-form-overlay').classList.remove('hidden');
     document.getElementById('topbar-title').textContent = 'Repair record';
+
+    } catch(repairFormErr) {
+      console.error('[openRepairForm] exception:', repairFormErr);
+      this.toast('⚠ Debug: form error — ' + repairFormErr.message);
+    }
   },
 
   closeRepairForm() {
@@ -5777,8 +5787,20 @@ const App = {
       this.hideLoading();
       console.error('[submitRepairRecord] failed:', e.message);
       if (e.notionResponse) console.error('[submitRepairRecord] Notion response:', JSON.stringify(e.notionResponse, null, 2));
-      const detail = e.notionResponse && e.notionResponse.message ? ' — ' + e.notionResponse.message : '';
-      fb.textContent = 'Could not save' + detail + '. Check console for details.';
+      const code = e.notionCode || '';
+      const notionMsg = e.notionResponse && e.notionResponse.message ? e.notionResponse.message : e.message || '';
+      let userMsg;
+      if (String(code) === '404' || notionMsg.toLowerCase().includes('not found') || notionMsg.toLowerCase().includes('could not find')) {
+        userMsg = 'Repair History DB not accessible — open that database in Notion and connect it to the Campus Assets integration (… → Connections).';
+      } else if (String(code) === '401' || notionMsg.toLowerCase().includes('unauthorized')) {
+        userMsg = 'Auth error — check the integration token in Settings.';
+      } else if (String(code) === '400') {
+        userMsg = 'Notion rejected the record (property mismatch). Error: ' + notionMsg;
+      } else {
+        userMsg = 'Could not save repair record. ' + (notionMsg || 'Check your connection and try again.');
+      }
+      this.toast('⚠ ' + userMsg);
+      fb.textContent = userMsg;
       fb.className = 'form-feedback error';
       fb.classList.remove('hidden');
     }
